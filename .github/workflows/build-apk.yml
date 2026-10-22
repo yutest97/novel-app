@@ -49,6 +49,20 @@ jobs:
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
           grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
 
+      - name: 把 compileSdk 提到 36（file_picker 要求）
+        run: |
+          FILE=$(ls android/app/build.gradle.kts 2>/dev/null || ls android/app/build.gradle)
+          echo "构建文件：$FILE"
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$FILE"
+          grep -n "compileSdk" "$FILE"
+
+      - name: 装 Android 36 平台（缺了会报找不到）
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" > /dev/null 2>&1 || true
+          ls "$ANDROID_HOME/platforms" || true
+
       - name: 装依赖
         run: flutter pub get
 
