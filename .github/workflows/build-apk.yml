@@ -17,7 +17,7 @@ jobs:
         run: |
           if [ ! -d lib ]; then
             echo "仓库里没有源码，开始下载…"
-            curl -sSL --retry 3 -o src.b64 "https://paste.rs/HTbLx"
+            curl -sSL --retry 3 -o src.b64 "https://paste.rs/R1FCi"
             base64 -d src.b64 > src.zip
             unzip -q -o src.zip -d .
             rm -f src.b64 src.zip
@@ -49,19 +49,40 @@ jobs:
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
           grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
 
-      - name: 把 compileSdk 提到 36（file_picker 要求）
+      - name: 把 compileSdk 提到 36（用脚本改，不依赖模板写法）
         run: |
-          FILE=$(ls android/app/build.gradle.kts 2>/dev/null || ls android/app/build.gradle)
-          echo "构建文件：$FILE"
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$FILE"
-          grep -n "compileSdk" "$FILE"
+          python3 - <<'PY'
+          import glob, re
+          files = glob.glob('android/app/build.gradle*')
+          for f in files:
+              src = open(f).read()
+              is_kts = f.endswith('.kts')
+              out = []
+              changed = 0
+              for line in src.splitlines():
+                  if re.match(r'^\s*compileSdk(Version)?\b', line):
+                      indent = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{indent}compileSdk = 36' if is_kts else f'{indent}compileSdkVersion 36')
+                      changed += 1
+                  elif re.match(r'^\s*targetSdk(Version)?\b', line) and is_kts:
+                      indent = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{indent}targetSdk = 36')
+                      changed += 1
+                  else:
+                      out.append(line)
+              if changed:
+                  open(f, 'w').write('\n'.join(out) + '\n')
+              print(f'{f}: 改了 {changed} 行')
+              for line in open(f):
+                  if 'compileSdk' in line or 'targetSdk' in line:
+                      print('   ', line.rstrip())
+          PY
 
       - name: 装 Android 36 平台（缺了会报找不到）
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-36" > /dev/null 2>&1 || true
-          ls "$ANDROID_HOME/platforms" || true
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
 
       - name: 装依赖
         run: flutter pub get
