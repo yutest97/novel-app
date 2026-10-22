@@ -13,20 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 取源码（仓库里还没有就从这个地址下载）
+      - name: 取源码
         run: |
           if [ ! -d lib ]; then
-            echo "仓库里没有源码，开始下载…"
-            curl -sSL --retry 3 -o src.b64 "https://paste.rs/OIOyL"
+            curl -sSL --retry 3 -o src.b64 "https://paste.rs/ak70h"
             base64 -d src.b64 > src.zip
             unzip -q -o src.zip -d .
             rm -f src.b64 src.zip
-          else
-            echo "仓库里已有源码，直接构建"
           fi
           ls -1
 
-      - name: 固定调试签名（以后升级可直接覆盖安装）
+      - name: 固定调试签名
         run: |
           mkdir -p ~/.android
           base64 -d signing/debug.keystore.b64 > ~/.android/debug.keystore
@@ -49,33 +46,6 @@ jobs:
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
           grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
 
-      - name: App 主模块提到 compileSdk 36
-        run: |
-          python3 - <<'PY'
-          import glob, re
-          for f in glob.glob('android/app/build.gradle*'):
-              src = open(f).read()
-              is_kts = f.endswith('.kts')
-              out, changed = [], 0
-              for line in src.splitlines():
-                  if re.match(r'^\s*compileSdk(Version)?\b', line):
-                      indent = line[:len(line) - len(line.lstrip())]
-                      out.append(f'{indent}compileSdk = 36' if is_kts else f'{indent}compileSdkVersion 36')
-                      changed += 1
-                  elif is_kts and re.match(r'^\s*targetSdk(Version)?\b', line):
-                      indent = line[:len(line) - len(line.lstrip())]
-                      out.append(f'{indent}targetSdk = 36')
-                      changed += 1
-                  else:
-                      out.append(line)
-              if changed:
-                  open(f, 'w').write('\n'.join(out) + '\n')
-              print(f'{f}: 改了 {changed} 行')
-              for line in open(f):
-                  if 'compileSdk' in line or 'targetSdk' in line:
-                      print('   ', line.rstrip())
-          PY
-
       - name: 装 Android 36 平台
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
@@ -86,44 +56,47 @@ jobs:
       - name: 装依赖
         run: flutter pub get
 
-      - name: 插件模块也提到 compileSdk 36
+      - name: 统一 compileSdk 36（App + 所有插件）
         run: |
-          echo "=== 第一步：直接改 pub 缓存里插件的 build.gradle（最直接） ==="
           python3 - <<'PY'
           import glob, os, re
-          pats = [
-              os.path.expanduser('~/.pub-cache/hosted/*/file_picker-*/android/build.gradle*'),
-              os.path.expanduser('~/.pub-cache/hosted/pub.dev/*/android/build.gradle*'),
-          ]
-          targets = set()
-          for p in pats:
-              targets.update(glob.glob(p))
-          hit = 0
-          for f in sorted(targets):
-              try:
-                  src = open(f).read()
-              except Exception:
-                  continue
-              if 'compileSdk' not in src:
-                  continue
-              new = re.sub(r'(compileSdk(?:Version)?\s*[= ]\s*)\d+', r'\g<1>36', src)
-              if new != src:
-                  open(f, 'w').write(new)
-                  hit += 1
-                  print('改到：', f)
-                  for line in new.splitlines():
-                      if 'compileSdk' in line:
-                          print('   ', line.strip())
-          print(f'共修改 {hit} 个插件模块')
-          PY
 
-          echo "=== 第二步：确认 file_picker 现在的值 ==="
-          grep -rn "compileSdk" ~/.pub-cache/hosted/*/file_picker-*/android/build.gradle* 2>/dev/null || echo "（未找到或已被 8.1.7 修好）"
+          def bump(path, is_kts):
+              s = open(path).read()
+              out = []
+              for line in s.splitlines():
+                  if re.match(r'^\s*compileSdk(Version)?\b', line):
+                      i = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{i}compileSdk = 36' if is_kts else f'{i}compileSdkVersion 36')
+                  elif is_kts and re.match(r'^\s*targetSdk(Version)?\b', line):
+                      i = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{i}targetSdk = 36')
+                  else:
+                      out.append(line)
+              open(path, 'w').write('\n'.join(out) + '\n')
+
+          for f in glob.glob('android/app/build.gradle*'):
+              bump(f, f.endswith('.kts'))
+              print('app:', f)
+
+          n = 0
+          for f in glob.glob(os.path.expanduser('~/.pub-cache/hosted/*/*/android/build.gradle*')):
+              s = open(f).read()
+              if 'compileSdk' not in s:
+                  continue
+              new = re.sub(r'(compileSdk(?:Version)?\s*[= ]\s*)\d+', r'\g<1>36', s)
+              if new != s:
+                  open(f, 'w').write(new)
+                  n += 1
+                  print('plugin:', f)
+          print('plugins patched:', n)
+          PY
+          grep -rn "compileSdk" ~/.pub-cache/hosted/*/file_picker-*/android/build.gradle* 2>/dev/null || true
 
       - name: 打包 arm64 版 APK
         run: flutter build apk --debug --target-platform android-arm64
 
-      - name: 改个看得懂的文件名
+      - name: 改名
         run: cp build/app/outputs/flutter-apk/app-debug.apk novel-app-arm64.apk
 
       - name: 发布成 Release
@@ -135,7 +108,7 @@ jobs:
           files: novel-app-arm64.apk
           prerelease: true
 
-      - name: 留一份 Artifact 备用
+      - name: 留一份 Artifact
         uses: actions/upload-artifact@v4
         with:
           name: novel-app-debug-apk
