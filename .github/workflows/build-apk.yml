@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,20 +66,6 @@ jobs:
           body: 下载下面的 novel-app-arm64.apk，装到手机上即可。
           files: novel-app-arm64.apk
           prerelease: true
-
-      - name: 把源码写回仓库（以后不用再传 zip）
-        run: |
-          rm -rf _scaffold
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          echo "novel-app-arm64.apk" >> .gitignore
-          git add -A
-          if git diff --cached --quiet; then
-            echo "没有新文件需要提交"
-          else
-            git commit -m "chore: 同步源码 v1.3.0 [skip ci]"
-            git push
-          fi
 
       - name: 留一份 Artifact 备用
         uses: actions/upload-artifact@v4
