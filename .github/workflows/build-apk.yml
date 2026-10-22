@@ -9,15 +9,29 @@ permissions:
 
 jobs:
   build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: 解压上传的源码
+      - name: 取源码（仓库里还没有就从这个地址下载）
         run: |
-          ZIP=$(ls *.zip | head -n 1)
-          echo "使用源码包：$ZIP"
-          unzip -q -o "$ZIP" -d .
+          if [ ! -d lib ]; then
+            echo "仓库里没有源码，开始下载…"
+            curl -sSL --retry 3 -o src.b64 "https://paste.rs/atrsV"
+            base64 -d src.b64 > src.zip
+            unzip -q -o src.zip -d .
+            rm -f src.b64 src.zip
+          else
+            echo "仓库里已有源码，直接构建"
+          fi
+          ls -1
+
+      - name: 固定调试签名（以后升级可直接覆盖安装）
+        run: |
+          mkdir -p ~/.android
+          base64 -d signing/debug.keystore.b64 > ~/.android/debug.keystore
+          ls -l ~/.android/debug.keystore
 
       - uses: actions/setup-java@v4
         with:
@@ -34,6 +48,7 @@ jobs:
           flutter create --platforms=android --project-name novel_app _scaffold
           cp -r _scaffold/android .
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
 
       - name: 装依赖
         run: flutter pub get
@@ -52,6 +67,19 @@ jobs:
           body: 下载下面的 novel-app-arm64.apk，装到手机上即可。
           files: novel-app-arm64.apk
           prerelease: true
+
+      - name: 把源码写回仓库（以后不用再传 zip）
+        run: |
+          rm -rf _scaffold
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "没有新文件需要提交"
+          else
+            git commit -m "chore: 同步源码 v1.3.0 [skip ci]"
+            git push
+          fi
 
       - name: 留一份 Artifact 备用
         uses: actions/upload-artifact@v4
