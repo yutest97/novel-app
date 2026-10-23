@@ -16,7 +16,7 @@ jobs:
       - name: 取源码
         run: |
           if [ ! -d lib ]; then
-            curl -sSL --retry 3 -o src.b64 "https://paste.c-net.org/ScaleDoubts"
+            curl -sSL --retry 3 -o src.b64 "https://paste.c-net.org/AirplaneModern"
             base64 -d src.b64 > src.zip
             unzip -q -o src.zip -d .
             rm -f src.b64 src.zip
